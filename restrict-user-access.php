@@ -8,7 +8,7 @@
 Plugin Name: Restrict User Access
 Plugin URI: 
 Description: Easily restrict content and contexts to provide premium access for specific User Roles.
-Version: 0.1
+Version: 0.2
 Author: Joachim Jensen, Intox Studio
 Author URI: http://www.intox.dk/
 Text Domain: restrict-user-access
@@ -43,7 +43,7 @@ final class RestrictUserAccess {
 	/**
 	 * Plugin version
 	 */
-	const PLUGIN_VERSION       = '0.1';
+	const PLUGIN_VERSION       = '0.2';
 
 	/**
 	 * Post Type for restriction
@@ -185,7 +185,9 @@ final class RestrictUserAccess {
 	 */
 	private function _init_metadata() {
 
-		$role_list = array();
+		$role_list = array(
+			0 => __('Not logged-in',self::DOMAIN)
+		);
 		$posts_list = array();
 		if(is_admin()) {
 			foreach(get_editable_roles() as $id => $role) {
@@ -394,7 +396,7 @@ final class RestrictUserAccess {
 			if ($column_name == 'handle' && $data != 2) {
 				//TODO: with autocomplete, only fetch needed pages
 				$page = $this->metadata()->get('page')->get_list_data($post_id);
-				$retval .= ": " . ($page ?: '<span style="color:red;">' . __('Please update Page', self::DOMAIN) . '</span>');
+				$retval .= ": " . ($page ? $page : '<span style="color:red;">' . __('Please update Page', self::DOMAIN) . '</span>');
 			}
 		}
 		
