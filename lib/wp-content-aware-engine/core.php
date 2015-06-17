@@ -99,9 +99,9 @@ if(!class_exists("WPCACore")) {
 				add_action('add_meta_boxes',
 					array(__CLASS__,'add_group_meta_box'),10,3);
 			
-				add_action('wp_ajax_cas_add_rule',
+				add_action('wp_ajax_wpca/add-rule',
 					array(__CLASS__,'ajax_update_group'));
-				add_action('wp_ajax_cas_remove_group',
+				add_action('wp_ajax_wpca/remove-group',
 					array(__CLASS__,'ajax_remove_group'));
 
 			}
@@ -221,7 +221,7 @@ if(!class_exists("WPCACore")) {
 			));
 
 			register_post_status( self::STATUS_NEGATED, array(
-				'label'                     => _x( 'Negated', 'post' ),
+				'label'                     => _x( 'Negated', 'condition group', self::DOMAIN ),
 				'public'                    => false,
 				'exclude_from_search'       => true,
 				'show_in_admin_all_list'    => false,
@@ -318,7 +318,7 @@ if(!class_exists("WPCACore")) {
 			}
 
 			$context_data['WHERE'] = $context_data['JOIN'] = $context_data['EXCLUDE'] = array();
-			$context_data = apply_filters('cas-context-data',$context_data);
+			$context_data = apply_filters('wpca/modules/context-data',$context_data);
 
 			// Check if there are any rules for this type of content
 			if(empty($context_data['WHERE']))
@@ -437,7 +437,7 @@ if(!class_exists("WPCACore")) {
 
 				$view = WPCAView::make("meta_box",array(
 					'title'    => isset($post_type_obj->labels->ca_title) ? $post_type_obj->labels->ca_title : "",
-					'no_groups'=> isset($post_type_obj->labels->ca_not_found) ? $post_type_obj->labels->ca_not_found : __('No Groups found.',self::DOMAIN),
+					'no_groups'=> isset($post_type_obj->labels->ca_not_found) ? $post_type_obj->labels->ca_not_found : __('No Groups found',self::DOMAIN),
 					'groups'   => self::_get_condition_groups(null,false),
 					'nonce'    => wp_nonce_field(self::PREFIX.get_the_ID(), self::NONCE, true, false)
 				));
@@ -545,7 +545,7 @@ if(!class_exists("WPCACore")) {
 					'post_status' => isset($_POST[self::PREFIX.'status']) ? self::STATUS_NEGATED : self::STATUS_PUBLISHED
 				));
 
-				do_action('cas-module-save-data',$post_id);
+				do_action('wpca/modules/save-data',$post_id);
 
 				$response['message'] = __('Condition group saved',self::DOMAIN);
 

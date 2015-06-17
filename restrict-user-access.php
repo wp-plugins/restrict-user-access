@@ -8,7 +8,7 @@
 Plugin Name: Restrict User Access
 Plugin URI: 
 Description: Easily restrict content and contexts to provide premium access for specific User Roles.
-Version: 0.2.2
+Version: 0.3
 Author: Joachim Jensen, Intox Studio
 Author URI: http://www.intox.dk/
 Text Domain: restrict-user-access
@@ -43,7 +43,7 @@ final class RestrictUserAccess {
 	/**
 	 * Plugin version
 	 */
-	const PLUGIN_VERSION       = '0.2.2';
+	const PLUGIN_VERSION       = '0.3';
 
 	/**
 	 * Post Type for restriction
@@ -66,6 +66,13 @@ final class RestrictUserAccess {
 	 * @var WPCAObjectManager
 	 */
 	private $metadata;
+
+	/**
+	 * Access Levels
+	 * 
+	 * @var array
+	 */
+	private $levels;
 
 	/**
 	 * Instance of class
@@ -94,6 +101,15 @@ final class RestrictUserAccess {
 				array(&$this,'clear_admin_menu'),99);
 			add_action('manage_'.self::TYPE_RESTRICT.'_posts_custom_column',
 				array(&$this,'admin_column_rows'),10,2);
+			add_action( 'show_user_profile',
+				array(&$this,'add_field_access_level'));
+			add_action( 'edit_user_profile',
+				array(&$this,'add_field_access_level'));
+			add_action( 'personal_options_update',
+				array(&$this,'save_user_profile'));
+			add_action( 'edit_user_profile_update',
+				array(&$this,'save_user_profile'));
+
 			add_filter('request',
 				array(&$this,'admin_column_orderby'));
 			add_filter('manage_'.self::TYPE_RESTRICT.'_posts_columns',
@@ -102,6 +118,10 @@ final class RestrictUserAccess {
 				array(&$this,'admin_column_sortable_headers'));
 			add_filter('post_updated_messages',
 				array(&$this,'restriction_updated_messages'));
+			add_filter( 'manage_users_columns',
+				array(&$this,'add_user_column_headers'));
+			add_filter( 'manage_users_custom_column',
+				array(&$this,'add_user_columns'), 10, 3 );
 		}
 
 		add_action('template_redirect',
@@ -186,6 +206,7 @@ final class RestrictUserAccess {
 	private function _init_metadata() {
 
 		$role_list = array(
+			-1 => __("Do not synchronize",self::DOMAIN),
 			0 => __('Not logged-in',self::DOMAIN)
 		);
 		$posts_list = array();
@@ -220,8 +241,8 @@ final class RestrictUserAccess {
 		),'exposure')
 		->add(new WPCAMeta(
 			'role',
-			__('Role'),
-			'editor',
+			__('Synchronized Role'),
+			-1,
 			'select',
 			$role_list
 		),'role')
@@ -244,6 +265,14 @@ final class RestrictUserAccess {
 			$posts_list,
 			__('Page to redirect to or display content from under teaser.', self::DOMAIN)
 		),'page');
+		// ->add(new WPCAMeta(
+		// 	'duration',
+		// 	__('Duration'),
+		// 	0,
+		// 	'text',
+		// 	$posts_list,
+		// 	__('Page to redirect to or display content from under teaser.', self::DOMAIN)
+		// ),'duration');
 	}
 	
 	/**
@@ -268,19 +297,19 @@ final class RestrictUserAccess {
 		// Register the sidebar type
 		register_post_type(self::TYPE_RESTRICT,array(
 			'labels'        => array(
-				'name'               => __('Restrictions', self::DOMAIN),
-				'singular_name'      => __('Restriction', self::DOMAIN),
-				'add_new'            => _x('Add New', 'access', self::DOMAIN),
-				'add_new_item'       => __('Add New Restriction', self::DOMAIN),
-				'edit_item'          => __('Edit Restriction', self::DOMAIN),
-				'new_item'           => __('New Restriction', self::DOMAIN),
-				'all_items'          => __('Restrictions', self::DOMAIN),
-				'view_item'          => __('View Restriction', self::DOMAIN),
-				'search_items'       => __('Search Restrictions', self::DOMAIN),
-				'not_found'          => __('No Restrictions found', self::DOMAIN),
-				'not_found_in_trash' => __('No Restrictions found in Trash', self::DOMAIN),
+				'name'               => __('Access Levels', self::DOMAIN),
+				'singular_name'      => __('Access Level', self::DOMAIN),
+				'add_new'            => _x('Add New', 'level', self::DOMAIN),
+				'add_new_item'       => __('Add New Access Level', self::DOMAIN),
+				'edit_item'          => __('Edit Access Level', self::DOMAIN),
+				'new_item'           => __('New Access Level', self::DOMAIN),
+				'all_items'          => __('Access Levels', self::DOMAIN),
+				'view_item'          => __('View Access Level', self::DOMAIN),
+				'search_items'       => __('Search Access Levels', self::DOMAIN),
+				'not_found'          => __('No Access Levels found', self::DOMAIN),
+				'not_found_in_trash' => __('No Access Levels found in Trash', self::DOMAIN),
 				//wp-content-aware-engine specific
-				'ca_title'           => __('Restrict access to',self::DOMAIN),
+				'ca_title'           => __('Grant explicit access to',self::DOMAIN),
 				'ca_not_found'       => __('No content. Please add at least one condition group to restrict content.',self::DOMAIN)
 			),
 			'capabilities'  => $capabilities,
@@ -288,6 +317,7 @@ final class RestrictUserAccess {
 			'show_in_menu'  => 'users.php',
 			'query_var'     => false,
 			'rewrite'       => false,
+			'hierarchical'  => true,
 			'menu_position' => 26.099, //less probable to be overwritten
 			'supports'      => array('title','page-attributes'),
 			'menu_icon'     => ''
@@ -406,6 +436,141 @@ final class RestrictUserAccess {
 	}
 
 	/**
+	 * Add Access Level to user profile
+	 *
+	 * @since 0.3
+	 * @param WP_User  $user
+	 */
+	public function add_field_access_level( $user ) {
+
+		$levels = RestrictUserAccess::instance()->_get_levels();
+		$user_levels = $this->_get_user_levels($user,false);
+		?>
+		<h3>Access</h3>
+		<table class="form-table">
+			<tr>
+				<th><label for="gender">Access Levels</label></th>
+				<td>
+					<p><label>
+						<input type="radio" name="_ca_level" value="0" <?php checked(empty($user_levels),true); ?> />
+						<?php _e("No Access Level",self::DOMAIN); ?>
+					</label></p>
+				<?php foreach($levels as $level) :
+				 ?>
+					<p><label>
+						<input type="radio" name="_ca_level" value="<?php echo esc_attr($level->ID); ?>" <?php checked( in_array($level->ID,$user_levels),true); ?> />
+						<?php echo $level->post_title; ?>
+					</label></p>
+				<?php endforeach; ?>
+				</td>
+			</tr>
+		</table>
+	<?php }
+
+	/**
+	 * Save additional data for
+	 * user profile
+	 *
+	 * @since  0.3
+	 * @param  int  $user_id
+	 * @return void
+	 */
+	public function save_user_profile( $user_id ) {
+		if ( !current_user_can( 'edit_user', $user_id ) )
+			return false;
+
+		$level = isset($_POST[WPCACore::PREFIX.'level']) ? $_POST[WPCACore::PREFIX.'level'] : null;
+
+		if($level) {
+			$this->_add_user_level($user_id,$level);
+		} else {
+			$user = get_userdata($user_id);
+			$level = $this->_get_user_levels($user,false);
+			if($level) {
+				$this->_remove_user_level($user_id,$level[0]);
+			}
+		}
+	}
+
+	/**
+	 * Add column headers on
+	 * User overview
+	 *
+	 * @since 0.3
+	 * @param array  $column
+	 */
+	public function add_user_column_headers( $column ) {
+		$column['level'] = __('Access Level',self::DOMAIN);
+		return $column;
+	}
+
+	/**
+	 * Add columns on user overview
+	 *
+	 * @since 0.3
+	 * @param [type]  $val
+	 * @param string  $column_name
+	 * @param int     $user_id
+	 */
+	public function add_user_columns( $val, $column_name, $user_id ) {
+		$user = get_userdata( $user_id );
+		switch ($column_name) {
+			case 'level' :
+				$levels = $this->_get_levels();
+				$level_links = array();
+				foreach ($this->_get_user_levels($user,false) as $user_level) {
+					$user_level = isset($levels[$user_level]) ? $levels[$user_level] : null;
+					if($user_level) {
+						$level_links[] = '<a href="'.admin_url( 'post.php?post='.$user_level->ID.'&action=edit').'">'.$user_level->post_title.'</a>';
+					}
+				}
+				return implode(", ", $level_links);
+				break;
+			default:
+		}
+		return $return;
+	}
+
+	/**
+	 * Add level to user
+	 *
+	 * @since  0.3
+	 * @param  int           $user_id
+	 * @param  int           $level_id
+	 * @return int|boolean
+	 */
+	public function _add_user_level($user_id,$level_id) {
+		$user_level = update_user_meta( $user_id, WPCACore::PREFIX."level", $level_id);
+		if($user_level) {
+			add_user_meta($user_id,WPCACore::PREFIX."level_".$user_level,time(),true);
+		}
+		return $user_level;
+	}
+
+	/**
+	 * Remove level from user
+	 *
+	 * @since  0.3
+	 * @param  $int    $user_id
+	 * @param  $int    $level_id
+	 * @return boolean
+	 */
+	public function _remove_user_level($user_id,$level_id) {
+		return delete_user_meta($user_id,WPCACore::PREFIX."level",$level_id) &&
+			delete_user_meta($user_id,WPCACore::PREFIX."level_".$level_id);
+	}
+
+	// private function _is_user_level_expired($user_id,$level) {
+	// 	$level_created = get_user_meta($user_id,WPCACore::PREFIX."level_".$level->ID,true);
+	// 	if($level_created) {
+	// 		$this->metadata()->get('duration')->get_data($level->ID);
+	// 		//todo: compare dates.
+	// 		//duration should be stored/parsed correctly and human readable
+	// 	}
+	// 	return false;
+	// }
+
+	/**
 	 * Get roles from specific user
 	 * or 0 if not logged in
 	 *
@@ -427,6 +592,59 @@ final class RestrictUserAccess {
 	}
 
 	/**
+	 * Get user levels traversed to their base
+	 *
+	 * @since  0.3
+	 * @param  WP_User  $user
+	 * @return array
+	 */
+	public function _get_user_levels($user = null,$hierarchical = true) {
+		$levels = array();
+		if($user || is_user_logged_in()) {
+			if(!$user) {
+				$user = wp_get_current_user();
+			}
+			$levels = get_user_meta($user->ID, WPCACore::PREFIX."level", false);
+			if($hierarchical) {
+				$extended_levels = array();
+				foreach($levels as $level) {
+					//todo: check for expired here and exclude
+					$levels = array_merge($levels,get_ancestors((int)$level,self::TYPE_RESTRICT));
+				}
+			}
+		} else {
+			$levels[] = '0';
+		}
+		return $levels;
+	}
+
+	/**
+	 * Get all levels not synced with roles
+	 *
+	 * @since  0.3
+	 * @return array
+	 */
+	public function _get_levels() {
+		if(!$this->levels) {
+			$levels = get_posts(array(
+				'numberposts' => -1,
+				'post_type'   => self::TYPE_RESTRICT,
+				'post_status' => array('publish','private','future'),
+				'meta_query' => array(
+					array(
+						'key' => WPCACore::PREFIX.'role',
+						'value' => '-1',
+					)
+				)
+			));
+			foreach ($levels as $level) {
+				$this->levels[$level->ID] = $level;
+			}
+		}
+		return $this->levels;
+	}
+
+	/**
 	 * Get conditional restrictions 
 	 * and authorize access for user
 	 * 
@@ -438,27 +656,44 @@ final class RestrictUserAccess {
 		$posts = WPCACore::get_posts(self::TYPE_RESTRICT);
 
 		if ($posts) {
+			$kick = 0;
 			$roles = $this->_get_user_roles();
+			$levels = $this->_get_user_levels();
 			$this->_init_metadata();
 			foreach ($posts as $post) {
 				$role = $this->metadata()->get('role')->get_data($post->ID);
-				if(!in_array($role, $roles)) {
-					$action = $this->metadata()->get('handle')->get_data($post->ID);
-					self::$page = $this->metadata()->get('page')->get_data($post->ID);
-					switch($action) {
-						case 0:
-							if(self::$page != get_the_ID()) {
-								wp_safe_redirect(get_permalink(self::$page));
-								exit;
-							}
-							break;
-						case 1:
-							add_filter( 'the_content', array($this,'content_tease'), 8);
-							break;
-						default: break;
+				if($role != '-1') {
+					if(!in_array($role, $roles)) {
+						$kick = $post->ID;
+					} else {
+						$kick = 0;
+						break;
 					}
-					return;
+				}// else {
+					if(!in_array($post->ID, $levels)) {
+						$kick = $post->ID;
+					} else {
+						$kick = 0;
+						break;
+					}
+				//}
+			}
+			if($kick) {
+				$action = $this->metadata()->get('handle')->get_data($kick);
+				self::$page = $this->metadata()->get('page')->get_data($kick);
+				switch($action) {
+					case 0:
+						if(self::$page != get_the_ID()) {
+							wp_safe_redirect(get_permalink(self::$page));
+							exit;
+						}
+						break;
+					case 1:
+						add_filter( 'the_content', array($this,'content_tease'), 8);
+						break;
+					default: break;
 				}
+				return;
 			}
 		}
 	}
@@ -517,7 +752,8 @@ final class RestrictUserAccess {
 			'cas-rules'     => 'cas-rules',
 			'cas-options'   => 'cas-options',
 			'submitdiv'     => 'submitdiv',
-			'slugdiv'       => 'slugdiv'
+			'slugdiv'       => 'slugdiv',
+			'pageparentdiv' => 'pageparentdiv'
 		);
 
 		// Loop through context (normal,advanced,side)
@@ -619,13 +855,6 @@ final class RestrictUserAccess {
 			}
 			echo '</p></span>';
 		}
-
-		global $post; 
-
-		echo '<span>';
-		echo '<strong>'.__('Order').'</strong>';
-		echo '<p><label for="menu_order" class="screen-reader-text">'.__('Order').'</label>';
-		echo '<input type="number" value="'.$post->menu_order.'" id="menu_order" size="4" name="menu_order"></p></span>';
 	}
 		
 	/**
